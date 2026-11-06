@@ -46,7 +46,9 @@ def init_db():
     
     # Default settings
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('target_ids', '')")
-    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('messages', '')")
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('message_1', '')")
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('message_2', '')")
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('message_3', '')")
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('titles', '')")
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('delay', '10')")
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rename_interval', '5')")
@@ -206,9 +208,13 @@ def bot_worker():
         target_ids_raw = c.fetchone()['value']
         target_ids = [t.strip() for t in target_ids_raw.split('\n') if t.strip()]
 
-        c.execute("SELECT value FROM settings WHERE key='messages'")
-        msgs_raw = c.fetchone()['value']
-        messages = [m.strip() for m in msgs_raw.split('\n') if m.strip()]
+        # Collect messages from the 3 boxes
+        messages = []
+        for m_key in ['message_1', 'message_2', 'message_3']:
+            c.execute("SELECT value FROM settings WHERE key=?", (m_key,))
+            row = c.fetchone()
+            if row and row['value'].strip():
+                messages.append(row['value'].strip())
 
         c.execute("SELECT value FROM settings WHERE key='titles'")
         titles_raw = c.fetchone()['value']
@@ -223,7 +229,7 @@ def bot_worker():
         conn.close()
 
         if not accounts or not target_ids or not messages:
-            add_log("[WARN] ⚠️ Accounts, Group IDs or Messages missing! Waiting...")
+            add_log("[WARN] ⚠️ Accounts, Group IDs or Message Boxes missing! Waiting...")
             time.sleep(10)
             continue
 
@@ -248,13 +254,13 @@ def bot_worker():
                 if target_id not in msg_counter:
                     msg_counter[target_id] = 0
 
-                # Send Message
+                # Send Message (Picks one of the 3 paragraph blocks entirely)
                 msg = random.choice(messages)
                 try:
                     cl.direct_send(msg, thread_ids=[target_id])
                     increment_stat('messages_sent')
                     msg_counter[target_id] += 1
-                    add_log(f"[SENT] 📨 [{target_id}] ({msg_counter[target_id]}/{rename_interval}): {msg[:25]}...")
+                    add_log(f"[SENT] 📨 [{target_id}] ({msg_counter[target_id]}/{rename_interval}): {msg[:30]}...")
                 except Exception as e:
                     add_log(f"[ERROR] ❌ Send Failed to {target_id}: {e}")
 
@@ -612,8 +618,14 @@ HTML_TEMPLATE = """
                     <label>Target Group / Thread IDs (1 per line):</label>
                     <textarea name="target_ids" rows="2" placeholder="Thread IDs">{{ settings['target_ids'] }}</textarea>
                     
-                    <label>Messages Collection (1 per line):</label>
-                    <textarea name="messages" rows="2" placeholder="Message lines">{{ settings['messages'] }}</textarea>
+                    <label>Message Box 1 (Paragraph Supported):</label>
+                    <textarea name="message_1" rows="2" placeholder="Enter paragraph 1...">{{ settings['message_1'] }}</textarea>
+
+                    <label>Message Box 2 (Paragraph Supported):</label>
+                    <textarea name="message_2" rows="2" placeholder="Enter paragraph 2...">{{ settings['message_2'] }}</textarea>
+
+                    <label>Message Box 3 (Paragraph Supported):</label>
+                    <textarea name="message_3" rows="2" placeholder="Enter paragraph 3...">{{ settings['message_3'] }}</textarea>
                     
                     <label>Group Name Titles (1 per line):</label>
                     <textarea name="titles" rows="2" placeholder="Titles to cycle">{{ settings['titles'] }}</textarea>
@@ -815,7 +827,7 @@ def fetch_all_groups():
 def save_settings():
     conn = get_db()
     c = conn.cursor()
-    for key in ['target_ids', 'messages', 'titles', 'delay', 'rename_interval', 'app_url']:
+    for key in ['target_ids', 'message_1', 'message_2', 'message_3', 'titles', 'delay', 'rename_interval', 'app_url']:
         val = request.form.get(key, '')
         c.execute("REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val))
     conn.commit()
